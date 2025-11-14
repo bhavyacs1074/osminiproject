@@ -28,3 +28,8 @@
 #define SYS_pstree 27
 #define SYS_welcomeFunction  28
 #define SYS_welcomeDone  29
+#define SYS_is_proc_valid 30
+#define SYS_get_proc_state 31
+#define SYS_fill_proc_name 32
+#define SYS_get_proc_name 33
+#define SYS_get_num_syscall 34

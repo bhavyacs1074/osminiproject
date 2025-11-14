@@ -48,10 +48,11 @@ struct proc {
   int killed;                  // If non-zero, have been killed
   struct file *ofile[NOFILE];  // Open files
   struct inode *cwd;           // Current directory
-  char name[16];               // Process name (debugging)
+  char name[32];// Process name (debugging)
+  char proc_name[32];
   void (*welcome_fn)(void);   // parent-specified function
   uint saved_eip;             // child's normal post-fork EIP
-
+  int syscall_count;
 };
 
 // Process memory is laid out contiguously, low addresses first:

@@ -88,7 +88,7 @@ allocproc(void)
 found:
   p->state = EMBRYO;
   p->pid = nextpid++;
-
+  p->syscall_count = 0;
   release(&ptable.lock);
 
   // Allocate kernel stack.
@@ -623,4 +623,235 @@ pstree(void){
  pstree_helper(curproc,0);
  release(&ptable.lock);
  return 0;
+}
+int
+is_proc_valid(int pid){
+ acquire(&ptable.lock);
+ struct proc *p;
+ int flag = 1;
+ int ans = -1;
+ for(p = ptable.proc;p<&ptable.proc[NPROC];p++){
+  if(p->pid==pid){
+	  flag = 0;
+   if(p->state==SLEEPING||p->state==RUNNABLE||p->state==RUNNING){
+	   ans = 1;
+    }
+   else{
+	   ans = 0;
+   }
+  }	  
+ }
+   
+  release(&ptable.lock);
+  if(flag){
+   cprintf("%s\n","Invalid pid given by process");
+   return ans;
+  }
+  return ans;
+}
+
+
+// ... (existing code like allocproc, userinit, scheduler, etc.) ...
+
+//
+// ADD THIS NEW FUNCTION
+//
+// int get_proc_state(int pid, char *buf, int size)
+//
+// Looks for a process with the given PID.
+// If found, copies the process's state string (e.g., "SLEEPING")
+// into the user-space buffer 'buf' up to 'size' bytes.
+// Returns 1 on success (process found and copied), 0 otherwise.
+//
+static char *states[] = {
+[UNUSED]    "UNUSED",
+[EMBRYO]    "EMBRYO",
+[SLEEPING]  "SLEEPING",
+[RUNNABLE]  "RUNNABLE",
+[RUNNING]   "RUNNING",
+[ZOMBIE]    "ZOMBIE"
+};
+int
+get_proc_state(int pid, char *buf, int size)
+{
+  struct proc *p;
+  char *state_str;
+  int len;
+  int found = 0;
+
+  if (size <= 0) {
+    return 0; // Invalid buffer size
+  }
+
+  acquire(&ptable.lock);
+
+  // Loop through process table
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->pid == pid){
+      // Found the process
+      state_str = states[p->state];
+      len = strlen(state_str) + 1; // Get length including null terminator
+
+      // Determine how many bytes to copy
+      // We copy at most 'size' bytes
+      int bytes_to_copy = (len < size) ? len : size;
+
+      // Safely copy the string from kernel space to the user-space buffer
+      if(copyout(myproc()->pgdir, (uint)buf, state_str, bytes_to_copy) < 0) {
+        // Failed to copy to user space (e.g., bad pointer)
+        found = 0;
+      } else {
+        // Success!
+        found = 1;
+
+        // If we truncated the string, we must ensure the user's
+        // buffer is null-terminated for safety.
+        if(bytes_to_copy == size) {
+          char null_byte = '\0';
+          // Write a null to the very last byte of the user buffer
+          copyout(myproc()->pgdir, (uint)buf + size - 1, &null_byte, 1);
+          // We ignore the return value here, it's a best-effort
+        }
+      }
+
+      break; // Exit loop once process is found
+    }
+  }
+
+  release(&ptable.lock);
+
+  return found;
+}
+int
+fill_proc_name(int pid, const char *name)
+{
+  struct proc *p;
+  int found = 0; // 0 = not found, 1 = found
+
+  acquire(&ptable.lock);
+
+  // Loop through process table
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->pid == pid){
+      // Found the process. Set flag to 1.
+      found = 1;
+
+      // Safely copy the string from user-space (name)
+      // into the kernel-space buffer (p->proc_name).
+      // We use copyin, which is the correct tool for this.
+      if(copyout(p->pgdir, (uint)name, p->proc_name, sizeof(p->proc_name)) < 0) {
+        // copyin failed (e.g., user passed a bad pointer).
+        // We'll just set the name to empty.
+        p->proc_name[0] = '\0';
+      } else {
+        // copyin succeeded, but it might not have copied a
+        // null-terminator if the user string was 16 bytes or longer.
+        // We MUST force null-termination at the end of our buffer.
+        p->proc_name[sizeof(p->proc_name) - 1] = '\0';
+      }
+      
+      break; // Exit loop once process is found
+    }
+  }
+
+  release(&ptable.lock);
+  
+  return found;
+}
+// ... (existing code in proc.c) ...
+
+//
+// ADD THIS NEW FUNCTION
+//
+// int get_proc_name(int pid, char *buf, int size)
+//
+// Looks for a process with the given PID.
+// If found, copies the process's 'proc_name' string
+// into the user-space buffer 'buf'.
+// Returns 1 on success, 0 otherwise.
+//
+int
+get_proc_name(int pid, char *buf, int size)
+{
+  struct proc *p;
+  char *process_name;
+  int len;
+  int found = 0;
+
+  if (size <= 0) {
+    return 0; // Invalid buffer size
+  }
+
+  acquire(&ptable.lock);
+
+  // Loop through process table
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->pid == pid){
+      // Found the process.
+      // We read from the 'proc_name' field you added.
+      process_name = p->proc_name;
+
+      // Get length including null terminator
+      len = strlen(process_name) + 1;
+
+      // Determine how many bytes to copy
+      // We copy at most 'size' bytes
+      int bytes_to_copy = (len < size) ? len : size;
+
+      // Safely copy the string from kernel space (process_name)
+      // to the user-space buffer (buf).
+      //
+      // Prototype from your screenshot:
+      // int copyout(pde_t *pgdir, uint va, void *p, uint len);
+      //
+      // myproc()->pgdir = The user process's page directory
+      // (uint)buf       = The user-space virtual address (the buffer)
+      // process_name    = The kernel-space data source
+      // bytes_to_copy   = The number of bytes
+      //
+      if(copyout(myproc()->pgdir, (uint)buf, process_name, bytes_to_copy) < 0) {
+        // Failed to copy to user space (e.g., bad pointer)
+        found = 0;
+      } else {
+        // Success!
+        found = 1;
+
+        // If we truncated the string, we must ensure the user's
+        // buffer is null-terminated for safety.
+        if(bytes_to_copy == size) {
+          char null_byte = '\0';
+          // Write a null to the very last byte of the user buffer
+          copyout(myproc()->pgdir, (uint)buf + size - 1, &null_byte, 1);
+          // We ignore the return value here, it's a best-effort
+        }
+      }
+
+      break; // Exit loop once process is found
+    }
+  }
+
+  release(&ptable.lock);
+
+  return found;
+}
+int
+get_num_syscall(int pid)
+{
+  struct proc *p;
+  int count = -1; // Default to -1 (error/not found)
+
+  acquire(&ptable.lock);
+
+  // Loop through process table
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->pid == pid){
+      // Found the process
+      count = p->syscall_count;
+      break;
+    }
+  }
+
+  release(&ptable.lock);
+
+  return count; // Returns -1 if pid not found, or p->syscall_count if found
 }

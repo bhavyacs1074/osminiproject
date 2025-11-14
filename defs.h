@@ -94,8 +94,6 @@ void            mpinit(void);
 // picirq.c
 void            picenable(int);
 void            picinit(void);
-
-// pipe.c
 int             pipealloc(struct file**, struct file**);
 void            pipeclose(struct pipe*, int);
 int             piperead(struct pipe*, char*, int);
@@ -123,8 +121,11 @@ void            yield(void);
 int             getChildren(void);
 int             getSibling(void);
 int             pstree(void);
-
-
+int             is_proc_valid(int pid);
+int             get_proc_state(int pid,char *buf,int size);
+int             fill_proc_name(int pid,const char *name);
+int             get_proc_name(int pid,char * buf,int size);
+int             get_num_syscall(int pid);
 // swtch.S
 void            swtch(struct context**, struct context*);
 
